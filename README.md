@@ -24,21 +24,6 @@ This repository contains the complete 3-stage pipeline from raw DICOM preprocess
 
 ---
 
-## End-to-End Pipeline Overview
-
-```mermaid
-flowchart TD
-    DCM["Raw Multi-Plane DICOM Studies<br/>(Sagittal, Coronal, Axial)"] --> PRE["Clinical Preprocessing Engine<br/>• Header Filter &lt;0.5ms &amp; Scout Rejection<br/>• 3D LPS Normal Projection (k = p · n_ref)<br/>• 130mm Physical FOV Crop &amp; P1.0–P99.5 Windowing<br/>• 21 True 2.5D Triplets (3.5mm step, 224×224)"]
-    PRE --> LAT["GPU Vectorized Laterality Flip<br/>(Right 'R' → Left 'L' in &lt;0.05ms)"]
-    LAT --> S1["Stage 1: Pure Visual Pretraining<br/>• 5-Fold ConvNeXt-Tiny + 2D FPN + GeM<br/>• Per-Finding Loss Masking (w &lt;= 0.30)"]
-    S1 --> SC["Cross-Modal Selective Self-Correction<br/>• Gold Standard 100% Protected (w=1.0, 3.0×)<br/>• Rescue Low-Conf Labels if 2|p_vis - 0.5| &gt;= 0.40<br/>• Down-weight Ambiguous Labels to w=0.05"]
-    SC --> S2["Stage 2: 5-Fold Champion Retraining<br/>• Class-Calibrated ASL + PU FN + Rank Loss<br/>• GPU Affine / MRI Gamma / Gold-Preserving Mixup<br/>• EMA (0.997) + Top-3 Epoch SWA"]
-    S2 --> INF["Zero-RAM Streaming Inference<br/>• 5 Folds Preloaded (564MB VRAM, &lt;3% GPU)<br/>• Batch Streaming B=8 (&lt;100MB Host RAM)<br/>• 3-Pass Physical Depth Slice-Jittering TTA"]
-    INF --> POST["Percentile Rank Normalization &amp; Sanity Checks"] --> SUB["submission.csv (0.917 Macro ROC-AUC)"]
-```
-
----
-
 ## Key Technical Highlights
 
 ### 1. Physics-Driven Clinical Preprocessing (`rsna-data-preprocessed.ipynb`)
@@ -46,8 +31,6 @@ flowchart TD
 Knee MRI datasets exhibit severe scanner heterogeneity (1.5T vs. 3.0T, arbitrary slice ordering, varying pixel spacing, and Left/Right laterality mirroring). The preprocessing engine standardizes raw DICOM volumes using clinical geometry:
 
 - **Fast Header Inspection (`< 0.5 ms`):** Reads DICOM metadata via `pydicom.dcmread(..., stop_before_pixels=True)`. Hard-rejects non-diagnostic localizers (`scout`, `loc`, `survey`), deprioritizes suboptimal series (`repeat`, `redo`, `motion`, `corrupt`), and classifies sequences into 4 contrast types (`FS`, `T1`, `NOFS_FLUID`, `OTHER`) using word-boundary regexes (avoiding `fse` → `fs` false positives).
-- **Deterministic Series Selection:** Selects the optimal series per plane via:
-  $$\text{Priority} = (\text{is\_clean} \times 10000) + (\text{is\_FS} \times 1000) + (\text{is\_PD} \times 100) + (\text{is\_T2} \times 20) + N_{\text{slices}}$$
 - **3D LPS Normal Vector Projection & Diversity Gate:** Computes unit slice normals from `ImageOrientationPatient` and projects `ImagePositionPatient` onto the reference normal ($k_i = \vec{p}_i \cdot \vec{n}_{\text{ref}}$), eliminating 180° vendor-dependent slice inversions. Duplicate/multi-echo slices within `0.01 mm` are merged.
 - **Standardized `130 mm × 130 mm` Physical FOV Crop:** Computes exact pixel bounding boxes from `PixelSpacing`, applies symmetric reflection padding (`cv2.BORDER_REFLECT`) if needed, normalizes intensity using volume-level percentiles $[P_{1.0}, P_{99.5}]$, and resizes to `224 × 224`.
 - **True 2.5D Physical Depth Triplets (`21 × 3 × 224 × 224`):** Samples **7 Sagittal** (`[8%, 92%]`), **7 Coronal** (`[18%, 82%]`), and **7 Axial** (`[10%, 90%]`) positions. Instead of fixed index offsets, each 3-channel triplet uses a physical **`3.5 mm`** step ($k - 3.5\text{ mm}, k, k + 3.5\text{ mm}$, ~7 mm total span).
