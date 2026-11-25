@@ -1,4 +1,4 @@
-# RSNA Knee Abnormality Detection — 0.917 Solution
+# RSNA Knee Abnormality Detection Solution
 
 ![Competition](https://img.shields.io/badge/Competition-RSNA%20Knee%20Abnormality%20Detection-1f6feb?style=flat-square)
 ![Score](https://img.shields.io/badge/Leaderboard-0.917%20Macro%20ROC--AUC-2ea043?style=flat-square)
